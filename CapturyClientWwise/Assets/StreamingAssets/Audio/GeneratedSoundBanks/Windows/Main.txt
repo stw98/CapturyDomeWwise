@@ -1,0 +1,6 @@
+Event	ID	Name			Wwise Object Path	Notes
+	3304205661	Play_Birds_chirping			\Default Work Unit\Play_Birds_chirping	
+
+In Memory Audio	ID	Name	Audio source file		Wwise Object Path	Notes	Data Size
+	905748087	Birds_chirping	C:\Users\MRLAB\Documents\1132002 Saw\WwiseProjects\CapturyClientWwise_WwiseProject\.cache\Windows\SFX\Birds_chirping_D79FB2B7.wem		\Actor-Mixer Hierarchy\Default Work Unit\Birds_chirping		1248096
+
