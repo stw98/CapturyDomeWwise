@@ -1,0 +1,171 @@
+using System;
+using System.Collections;
+using Captury;
+using Riptide;
+using Riptide.Utils;
+using UnityEngine;
+using static Captury.CapturySimpleAvatarManager;
+
+public enum ServerToClientID : ushort
+{
+    SpawnPlayer = 1,
+    CapturyPose = 2,
+}
+
+public enum ClientToServerID : ushort
+{
+    PlayerName = 1,
+}
+
+public class NetworkManager : MonoBehaviour
+{
+    private static NetworkManager _singleton;
+    public static NetworkManager Singleton
+    {
+        get => _singleton;
+        private set
+        {
+            if (_singleton == null)
+                _singleton = value;
+            else if (_singleton != value)
+            {
+                Debug.Log($"{nameof(NetworkManager)} instance already exists, destroying object!");
+                Destroy(value);
+            }
+        }
+    }
+    private const ushort port = 51001;
+    [SerializeField] private ushort maxPlayers;
+
+    [Header("Prefabs")]
+    [SerializeField] private GameObject localPlayerPrefab;
+    [SerializeField] private GameObject playerPrefab;
+
+    public GameObject LocalPlayerPrefab => localPlayerPrefab;
+    public GameObject PlayerPrefab => playerPrefab;
+
+    [Header("Captury")]
+    [SerializeField] CapturySimpleAvatarManager capturySimpleAvatarManager;
+    public static Action<GameObject, Avatar, float, AvatarMesh[], int, GameObject, CapturySkeleton> SpawnAction = delegate { };
+
+    public Server Server { get; private set; }
+    public Client Client { get; private set; }
+
+    public Action <string> ErrorLog = delegate { };
+
+    private void Awake()
+    {
+        Singleton = this;
+    }
+
+    private void Start()
+    {
+        RiptideLogger.Initialize(Debug.Log, Debug.Log, Debug.LogWarning, Debug.LogError, false);
+
+        Server = new Server();
+        Server.ClientConnected += NewPlayerConnected;
+
+        capturySimpleAvatarManager.StartConnectClient += ConnectCapturyClient;
+    }
+
+    private void FixedUpdate()
+    {
+        if (Server.IsRunning)
+        {
+            Server.Update();
+        }
+        
+        if (Client != null)
+        {
+            Client.Update();
+        }
+    }
+
+    private void OnApplicationQuit()
+    {
+        LeaveGame();
+    }
+
+    public void StartHost()
+    {
+        Server.Start(port, maxPlayers);
+    }
+
+    internal void LeaveGame()
+    {
+        if (Server.IsRunning)
+        {
+            Server.Stop();
+        }
+        if (Client != null)
+        {
+            Client.Disconnect();
+
+            Client.ConnectionFailed -= OnConnectionFailed;
+            Client.ClientDisconnected -= OnPlayerLeft;
+            Client.Disconnected -= OnDisconnected;
+        }
+    }
+
+    private void ConnectCapturyClient(GameObject avatar, Avatar av, float backLength, AvatarMesh[] avatars, int nextAvatar, GameObject trackingArea, CapturySkeleton skel)
+    {
+        StartCoroutine(ConnectClient(avatar, av, backLength, avatars, nextAvatar, trackingArea, skel));
+    }
+
+    IEnumerator ConnectClient(GameObject avatar, Avatar av, float backLength, AvatarMesh[] avatars, int nextAvatar, GameObject trackingArea, CapturySkeleton skel)
+    {
+        Client = new Client();
+        Client.ConnectionFailed += OnConnectionFailed;
+        Client.ClientDisconnected += OnPlayerLeft;
+        Client.Disconnected += OnDisconnected;
+
+        yield return Client.Connect($"127.0.0.1:{port}");
+
+        SpawnAction.Invoke(avatar, av, backLength, avatars, nextAvatar, trackingArea, skel);
+    }
+
+    private void OnConnectionFailed(object sender, EventArgs e)
+    {
+        UIManager.Singleton.BackToMain();
+    }
+
+    private void NewPlayerConnected(object sender, ServerConnectedEventArgs e)
+    {
+        foreach (Player player in Player.playerList.Values)
+        {
+            Debug.Log(player.name);
+            if (player.Id != e.Client.Id)
+            {
+                player.SendSpawn(e.Client.Id);
+            }
+        }
+    }
+
+    private void OnPlayerLeft(object sender, ClientDisconnectedEventArgs e)
+    {
+        Destroy(Player.playerList[e.Id].gameObject);
+    }
+
+    private void OnDisconnected(object sender, DisconnectedEventArgs e)
+    {
+        foreach (Player player in Player.playerList.Values)
+            Destroy(player.gameObject);
+        UIManager.Singleton.BackToMain();
+    }
+
+    public void SetMaxPlayer(string maxPlayersValue)
+    {
+        ushort value;
+        bool isUShort = ushort.TryParse(maxPlayersValue, out value);
+        if (isUShort)
+        {
+            maxPlayers = value;
+            return;
+        }
+        else
+        {
+            ErrorLog.Invoke("Max player must be a number. Now reset max player to 5");
+            maxPlayers = 5;
+        }
+    }
+}
